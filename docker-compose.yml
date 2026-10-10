@@ -1,0 +1,22 @@
+# Développement : base PostgreSQL locale (port 5434 pour ne pas entrer en conflit avec un Postgres natif)
+name: taskflow-saas-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: taskflow
+      POSTGRES_PASSWORD: taskflow
+      POSTGRES_DB: taskflow
+    ports:
+      - '5434:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U taskflow -d taskflow']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  db-data:

@@ -1,0 +1,66 @@
+# Production (auto-hébergée) : PostgreSQL + migration + API + Web.
+#   cp .env.prod.example .env.prod   # puis renseigner les secrets
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+# Placez un reverse proxy TLS (Caddy, Traefik, load balancer…) devant le service web.
+name: taskflow-saas
+
+x-api-env: &api-env
+  NODE_ENV: production
+  DATABASE_URL: postgresql://${POSTGRES_USER:-taskflow}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}@db:5432/${POSTGRES_DB:-taskflow}?schema=public
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET requis}
+  JWT_ACCESS_TTL: 15m
+  REFRESH_TOKEN_TTL_DAYS: 30
+  COOKIE_SECURE: ${COOKIE_SECURE:-true}
+  CORS_ORIGINS: ${APP_ORIGIN:?APP_ORIGIN requis}
+  TRUST_PROXY: ${TRUST_PROXY:-1}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  # 1 en production ; augmenté uniquement pour les tests E2E (plusieurs inscriptions par minute)
+  THROTTLE_AUTH_MULTIPLIER: ${THROTTLE_AUTH_MULTIPLIER:-1}
+  ENABLE_SWAGGER: 'false'
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-taskflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}
+      POSTGRES_DB: ${POSTGRES_DB:-taskflow}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Job ponctuel : applique les migrations avant le démarrage de l'API.
+  migrate:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    image: taskflow-saas-api
+    command: ['npx', 'prisma', 'migrate', 'deploy']
+    environment: *api-env
+    depends_on:
+      db: { condition: service_healthy }
+    restart: 'no'
+
+  api:
+    image: taskflow-saas-api
+    restart: unless-stopped
+    environment: *api-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    expose:
+      - '3000'
+
+  web:
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    image: taskflow-saas-web
+    restart: unless-stopped
+    depends_on:
+      api: { condition: service_healthy }
+    ports:
+      - '${WEB_PORT:-8080}:8080'
+
+volumes:
+  db-data:

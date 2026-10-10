@@ -1,0 +1,140 @@
+// Modèle de données — voir docs/DATA_MODEL.md
+// Contraintes non exprimables en Prisma (owner unique, CHECK) : migration initiale, SQL manuel.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String   @db.VarChar(100)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships     ProjectMember[]
+  createdTasks    Task[]          @relation("TaskCreator")
+  refreshTokens   RefreshToken[]
+  notifications   Notification[]
+  personalProject Project?        @relation("PersonalProject")
+
+  @@map("users")
+}
+
+model Project {
+  id                String   @id @default(uuid()) @db.Uuid
+  name              String   @db.VarChar(100)
+  description       String?  @db.VarChar(2000)
+  personalForUserId String?  @unique @map("personal_for_user_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  personalFor User?           @relation("PersonalProject", fields: [personalForUserId], references: [id], onDelete: Cascade)
+  members     ProjectMember[]
+  tasks       Task[]
+
+  @@map("projects")
+}
+
+model ProjectMember {
+  projectId String      @map("project_id") @db.Uuid
+  userId    String      @map("user_id") @db.Uuid
+  role      ProjectRole
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedTasks Task[]  @relation("TaskAssignee")
+
+  @@id([projectId, userId])
+  @@index([userId])
+  @@map("project_members")
+}
+
+model Task {
+  id          String       @id @default(uuid()) @db.Uuid
+  projectId   String       @map("project_id") @db.Uuid
+  title       String       @db.VarChar(200)
+  description String?      @db.VarChar(5000)
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  dueDate     DateTime?    @map("due_date") @db.Timestamptz(3)
+  completedAt DateTime?    @map("completed_at") @db.Timestamptz(3)
+  assigneeId  String?      @map("assignee_id") @db.Uuid
+  creatorId   String?      @map("creator_id") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // R6 garantie par la base : (project_id, assignee_id) doit exister dans project_members.
+  // NoAction (vérifié en fin d'instruction) pour ne pas bloquer la suppression en cascade d'un projet.
+  assignee ProjectMember? @relation("TaskAssignee", fields: [projectId, assigneeId], references: [projectId, userId], onDelete: NoAction, map: "tasks_assignee_fkey")
+
+  creator User? @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status])
+  @@index([assigneeId, status])
+  @@index([projectId, dueDate])
+  @@map("tasks")
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  tokenHash    String    @unique @map("token_hash")
+  familyId     String    @map("family_id") @db.Uuid
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(3)
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  userAgent    String?   @map("user_agent") @db.VarChar(500)
+  ip           String?   @db.VarChar(64)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// Post-MVP : table créée dès maintenant pour éviter une migration de structure plus tard.
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  type      String    @db.VarChar(50)
+  payload   Json
+  readAt    DateTime? @map("read_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}

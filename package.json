@@ -1,0 +1,35 @@
+{
+  "name": "taskflow",
+  "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
+    "build": "npm run build -w apps/api && npm run build -w apps/web",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "npm run typecheck -w apps/api && npm run typecheck -w apps/web",
+    "test": "npm test -w apps/api && npm test -w apps/web",
+    "test:e2e": "npm run test:e2e -w apps/api && npm run test:e2e -w apps/web",
+    "test:cov": "npm run test:cov -w apps/api && npm run test:cov -w apps/web",
+    "db:up": "docker compose up -d --wait db",
+    "db:test:up": "docker compose -f docker-compose.test.yml up -d --wait"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "concurrently": "^9.2.5",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.9",
+    "typescript-eslint": "^8.71.1"
+  }
+}
