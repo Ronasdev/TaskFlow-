@@ -3,7 +3,7 @@
 # Contexte de build : racine du monorepo.
 #   docker build -f apps/web/Dockerfile -t taskflow-web .
 
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
